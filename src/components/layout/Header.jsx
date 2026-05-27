@@ -4,6 +4,11 @@ import { useAuthStore } from "../../store/authStore";
 import { calcMarketIndex } from "../../engine/marketEngine";
 import { pctColor, pctStr } from "../../utils/format";
 import { COMPANIES } from "../../data/companies";
+import {
+  generateSessionNews,
+  getCurrentSessionIdx,
+  SESSIONS,
+} from "../../engine/newsEngine";
 
 function FearGreedBadge({ value }) {
   const label =
@@ -59,7 +64,6 @@ function UserMenu() {
   const profile = useAuthStore((s) => s.profile);
   const signOut = useAuthStore((s) => s.signOut);
 
-  // 바깥 클릭 시 닫기
   useEffect(() => {
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
@@ -73,7 +77,6 @@ function UserMenu() {
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      {/* 트리거 버튼 */}
       <div
         onClick={() => setOpen((p) => !p)}
         style={{
@@ -84,7 +87,6 @@ function UserMenu() {
           padding: "3px 6px",
           borderRadius: 8,
           background: open ? "var(--surface2)" : "transparent",
-          transition: "background .1s",
           userSelect: "none",
         }}
       >
@@ -118,7 +120,6 @@ function UserMenu() {
         <span style={{ fontSize: 9, color: "var(--muted)" }}>▾</span>
       </div>
 
-      {/* 드롭다운 */}
       {open && (
         <div
           style={{
@@ -136,7 +137,6 @@ function UserMenu() {
         >
           {isLoggedIn ? (
             <>
-              {/* 유저 정보 */}
               <div
                 style={{
                   padding: "12px 14px",
@@ -150,7 +150,6 @@ function UserMenu() {
                   {user.email}
                 </div>
               </div>
-              {/* 로그아웃 */}
               <div
                 onClick={async () => {
                   setOpen(false);
@@ -164,7 +163,6 @@ function UserMenu() {
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  transition: "background .1s",
                 }}
                 onMouseEnter={(e) =>
                   (e.currentTarget.style.background = "#ef444415")
@@ -178,7 +176,6 @@ function UserMenu() {
             </>
           ) : (
             <>
-              {/* 게스트 상태 */}
               <div
                 style={{
                   padding: "12px 14px",
@@ -195,9 +192,7 @@ function UserMenu() {
               <div
                 onClick={() => {
                   setOpen(false);
-                  /* LoginScreen 진입 트리거 */ useAuthStore.setState({
-                    _forceLogin: true,
-                  });
+                  useAuthStore.setState({ _forceLogin: true });
                 }}
                 style={{
                   padding: "10px 14px",
@@ -228,11 +223,13 @@ function UserMenu() {
 export default function Header() {
   const stocks = useWorldStore((s) => s.stocks);
   const fearGreed = useWorldStore((s) => s.fearGreed);
+  const newsLoading = useWorldStore((s) => s.newsLoading);
 
   const idx = calcMarketIndex(stocks);
   const avgChg =
     COMPANIES.reduce((a, c) => a + (stocks[c.ticker]?.changePct ?? 0), 0) /
     COMPANIES.length;
+  const session = SESSIONS[getCurrentSessionIdx()];
 
   return (
     <div
@@ -274,6 +271,16 @@ export default function Header() {
           {pctStr(avgChg)}
         </span>
       </div>
+      <Divider />
+
+      {/* 뉴스 생성 버튼 — 현재 세션 이름 표시 */}
+      <button
+        onClick={generateSessionNews}
+        disabled={newsLoading}
+        style={{ fontSize: 11 }}
+      >
+        {newsLoading ? "⏳ 생성중..." : `📰 ${session.label} 뉴스`}
+      </button>
       <Divider />
 
       <UserMenu />
