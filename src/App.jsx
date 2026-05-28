@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMarket } from "./hooks/useMarket";
 import { useNews } from "./hooks/useNews";
 import { useAuth } from "./hooks/useAuth";
@@ -12,14 +13,24 @@ import Watchlist from "./components/market/Watchlist";
 import StockHeader from "./components/market/StockHeader";
 import CandleChart from "./components/market/CandleChart";
 import VolumeChart from "./components/market/VolumeChart";
+import SectorHeatmap from "./components/market/SectorHeatmap";
+import PortfolioChart from "./components/trade/PortfolioChart";
 import NewsFeed from "./components/news/NewsFeed";
 import RightPanel from "./components/RightPanel";
+
+const CENTER_VIEWS = [
+  { id: "chart", label: "📈 차트" },
+  { id: "heatmap", label: "🟩 히트맵" },
+  { id: "portfolio", label: "💰 내 수익" },
+];
 
 export default function App() {
   useAuth();
   useMarket();
   useNews();
   useMarketSync();
+
+  const [centerView, setCenterView] = useState("chart");
 
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
@@ -42,10 +53,7 @@ export default function App() {
       </div>
     );
 
-  // Supabase 미설정이면 로그인 없이 바로 진입
-  // 설정됐는데 로그인 안 했거나, 강제로 로그인 창 열었을 때만 LoginScreen
   const showLogin = isSupabaseConfigured && (!user || forceLogin);
-
   if (showLogin)
     return (
       <LoginScreen
@@ -66,8 +74,10 @@ export default function App() {
           overflow: "hidden",
         }}
       >
+        {/* ── 좌: 종목 목록 ── */}
         <Watchlist />
 
+        {/* ── 중앙 ── */}
         <div
           style={{
             display: "flex",
@@ -75,27 +85,72 @@ export default function App() {
             overflow: "hidden",
           }}
         >
-          <StockHeader />
+          {/* 뷰 전환 탭 */}
           <div
             style={{
-              flex: 1,
-              background: "var(--surface)",
               display: "flex",
-              flexDirection: "column",
-              padding: "4px 4px 0",
-              overflow: "hidden",
+              alignItems: "center",
+              gap: 4,
+              padding: "5px 10px",
+              flexShrink: 0,
+              background: "var(--surface)",
+              borderBottom: "0.5px solid var(--border)",
             }}
           >
-            <div style={{ flex: "0 0 70%", minHeight: 0 }}>
-              <CandleChart />
-            </div>
-            <div style={{ flex: "0 0 30%", minHeight: 0 }}>
-              <VolumeChart />
-            </div>
+            {CENTER_VIEWS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setCenterView(v.id)}
+                style={{
+                  padding: "3px 12px",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  borderRadius: 4,
+                  border: "none",
+                  cursor: "pointer",
+                  background:
+                    centerView === v.id ? "var(--blue)" : "var(--surface2)",
+                  color: centerView === v.id ? "#fff" : "var(--muted)",
+                }}
+              >
+                {v.label}
+              </button>
+            ))}
           </div>
-          <NewsFeed />
+
+          {/* 차트 뷰 */}
+          {centerView === "chart" && (
+            <>
+              <StockHeader />
+              <div
+                style={{
+                  flex: 1,
+                  background: "var(--surface)",
+                  display: "flex",
+                  flexDirection: "column",
+                  padding: "4px 4px 0",
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ flex: "0 0 70%", minHeight: 0 }}>
+                  <CandleChart />
+                </div>
+                <div style={{ flex: "0 0 30%", minHeight: 0 }}>
+                  <VolumeChart />
+                </div>
+              </div>
+              <NewsFeed />
+            </>
+          )}
+
+          {/* 히트맵 뷰 */}
+          {centerView === "heatmap" && <SectorHeatmap />}
+
+          {/* 포트폴리오 수익 차트 뷰 */}
+          {centerView === "portfolio" && <PortfolioChart />}
         </div>
 
+        {/* ── 우: 주문 패널 ── */}
         <RightPanel />
       </div>
     </div>

@@ -2,9 +2,10 @@ import { create } from "zustand";
 import { COMPANIES, COMPANY_MAP } from "../data/companies";
 import { supabase } from "../lib/supabase";
 
-// ── 상수 ──────────────────────────────────────────────────────
-const SHARES_OUTSTANDING = 1_000_000; // 가상 발행주수
-const IMPACT_AMP = 5.0; // 충격 증폭 배율
+export const INITIAL_CASH = 10_000_000;
+
+const SHARES_OUTSTANDING = 1_000_000;
+const IMPACT_AMP = 5.0;
 
 // ── 초기 데이터 빌더 ──────────────────────────────────────────
 function buildInitialStocks() {
@@ -94,7 +95,6 @@ function buildInitialCandles() {
 async function writeTrade(userId, username, ticker, side, qty, price) {
   const company = COMPANY_MAP[ticker];
 
-  // 1. 현재 holdings 조회
   const { data: cur } = await supabase
     .from("holdings")
     .select("qty, avg_cost")
@@ -102,7 +102,6 @@ async function writeTrade(userId, username, ticker, side, qty, price) {
     .eq("ticker", ticker)
     .single();
 
-  // 2. holdings 업데이트
   if (side === "buy") {
     const prevQty = cur?.qty ?? 0;
     const prevAvg = cur?.avg_cost ?? 0;
@@ -131,7 +130,6 @@ async function writeTrade(userId, username, ticker, side, qty, price) {
     }
   }
 
-  // 3. cash 업데이트
   const { data: prof } = await supabase
     .from("profiles")
     .select("cash")
@@ -143,12 +141,10 @@ async function writeTrade(userId, username, ticker, side, qty, price) {
     .update({ cash: (prof?.cash ?? 0) + cashDelta })
     .eq("id", userId);
 
-  // 4. 거래 내역 기록
   await supabase
     .from("transactions")
     .insert({ user_id: userId, ticker, side, qty, price });
 
-  // 5. 시장 충격 발행 → 다른 유저들이 Realtime으로 수신
   const tradeValue = qty * price;
   const marketCap = company.basePrice * SHARES_OUTSTANDING;
   const impact =
@@ -160,16 +156,16 @@ async function writeTrade(userId, username, ticker, side, qty, price) {
 
 // ── Zustand 스토어 ────────────────────────────────────────────
 export const useWorldStore = create((set, get) => ({
-  // ── 상태 ──────────────────────────────────────────────────
   stocks: buildInitialStocks(),
   history: buildInitialHistory(),
   candles: buildInitialCandles(),
   trades: Object.fromEntries(COMPANIES.map((c) => [c.ticker, []])),
   news: [],
   selected: "NOVA",
+  portfolioHistory: [], // [{t, v, p}] — 총자산 시계열
 
   portfolio: {
-    cash: 10_000_000,
+    cash: INITIAL_CASH,
     holdings: {}, // { ticker: { qty, avgCost } }
   },
 
@@ -185,25 +181,44 @@ export const useWorldStore = create((set, get) => ({
   setRightTab: (tab) => set({ rightTab: tab }),
   setTimeframe: (tf) => set({ timeframe: tf }),
 
-  // ── 틱 업데이트 (marketEngine에서 호출) ──────────────────
+  // ── 틱 업데이트 ──────────────────────────────────────────
   tickUpdate: (nextStocks, nextHistory, nextCandles, newTrades, fearGreed) =>
-    set((state) => ({
-      stocks: nextStocks,
-      history: nextHistory,
-      candles: nextCandles,
-      fearGreed,
-      trades: Object.fromEntries(
-        COMPANIES.map((c) => [
-          c.ticker,
-          [
-            ...(newTrades[c.ticker] ?? []),
-            ...(state.trades[c.ticker] ?? []),
-          ].slice(0, 30),
-        ]),
-      ),
-    })),
+    set((state) => {
+      // 포트폴리오 총자산 스냅샷
+      const holdingsValue = Object.entries(state.portfolio.holdings).reduce(
+        (sum, [ticker, { qty }]) =>
+          sum + (nextStocks[ticker]?.price ?? 0) * qty,
+        0,
+      );
+      const totalAsset = state.portfolio.cash + holdingsValue;
+      const ts = new Date().toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
 
-  // ── 뉴스 충격 (newsEngine + Realtime에서 호출) ───────────
+      return {
+        stocks: nextStocks,
+        history: nextHistory,
+        candles: nextCandles,
+        fearGreed,
+        portfolioHistory: [
+          ...state.portfolioHistory.slice(-299),
+          { t: ts, v: totalAsset, p: totalAsset - INITIAL_CASH },
+        ],
+        trades: Object.fromEntries(
+          COMPANIES.map((c) => [
+            c.ticker,
+            [
+              ...(newTrades[c.ticker] ?? []),
+              ...(state.trades[c.ticker] ?? []),
+            ].slice(0, 30),
+          ]),
+        ),
+      };
+    }),
+
+  // ── 뉴스 충격 ────────────────────────────────────────────
   applyShock: (affected) => {
     set((state) => {
       const next = { ...state.stocks };
@@ -246,7 +261,6 @@ export const useWorldStore = create((set, get) => ({
       second: "2-digit",
     });
 
-    // 로컬 즉시 반영 (낙관적 업데이트)
     set((state) => ({
       portfolio: {
         cash: cash - cost,
@@ -258,22 +272,27 @@ export const useWorldStore = create((set, get) => ({
       ].slice(0, 100),
     }));
 
-    // Supabase 비동기 저장 + 시장 충격 발행
     try {
       const { useAuthStore } = await import("./authStore");
       const { user, profile } = useAuthStore.getState();
       if (user) {
-        await writeTrade(
-          user.id,
-          profile?.username,
-          ticker,
-          "buy",
-          qty,
-          s.price,
-        );
+        const { isSupabaseConfigured } = await import("../lib/supabase");
+        if (isSupabaseConfigured) {
+          writeTrade(
+            user.id,
+            profile?.username,
+            ticker,
+            "buy",
+            qty,
+            s.price,
+          ).catch(console.error);
+        } else {
+          const { lsSaveHoldings } = await import("./authStore");
+          lsSaveHoldings(user.id, get().portfolio.holdings);
+        }
       }
     } catch (e) {
-      console.error("[buyStock] Supabase 오류:", e);
+      console.error("[buyStock]:", e);
     }
 
     return true;
@@ -310,17 +329,23 @@ export const useWorldStore = create((set, get) => ({
       const { useAuthStore } = await import("./authStore");
       const { user, profile } = useAuthStore.getState();
       if (user) {
-        await writeTrade(
-          user.id,
-          profile?.username,
-          ticker,
-          "sell",
-          qty,
-          s.price,
-        );
+        const { isSupabaseConfigured } = await import("../lib/supabase");
+        if (isSupabaseConfigured) {
+          writeTrade(
+            user.id,
+            profile?.username,
+            ticker,
+            "sell",
+            qty,
+            s.price,
+          ).catch(console.error);
+        } else {
+          const { lsSaveHoldings } = await import("./authStore");
+          lsSaveHoldings(user.id, get().portfolio.holdings);
+        }
       }
     } catch (e) {
-      console.error("[sellStock] Supabase 오류:", e);
+      console.error("[sellStock]:", e);
     }
 
     return true;
