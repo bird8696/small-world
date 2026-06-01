@@ -17,11 +17,13 @@ import SectorHeatmap from "./components/market/SectorHeatmap";
 import PortfolioChart from "./components/trade/PortfolioChart";
 import NewsFeed from "./components/news/NewsFeed";
 import RightPanel from "./components/RightPanel";
+import RankingBoard from "./components/market/RankingBoard";
 
 const CENTER_VIEWS = [
   { id: "chart", label: "📈 차트" },
   { id: "heatmap", label: "🟩 히트맵" },
   { id: "portfolio", label: "💰 내 수익" },
+  { id: "ranking", label: "🏆 랭킹" }, // ← 추가
 ];
 
 export default function App() {
@@ -117,7 +119,6 @@ export default function App() {
               </button>
             ))}
           </div>
-
           {/* 차트 뷰 */}
           {centerView === "chart" && (
             <>
@@ -142,12 +143,12 @@ export default function App() {
               <NewsFeed />
             </>
           )}
-
           {/* 히트맵 뷰 */}
           {centerView === "heatmap" && <SectorHeatmap />}
-
           {/* 포트폴리오 수익 차트 뷰 */}
           {centerView === "portfolio" && <PortfolioChart />}
+          {/* 랭킹 보드 뷰 */}
+          {centerView === "ranking" && <RankingBoard />}
         </div>
 
         {/* ── 우: 주문 패널 ── */}

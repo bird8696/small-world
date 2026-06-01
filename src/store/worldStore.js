@@ -152,6 +152,22 @@ async function writeTrade(userId, username, ticker, side, qty, price) {
   await supabase
     .from("market_shocks")
     .insert({ ticker, impact, username: username ?? "anonymous" });
+
+  // 랭킹용 총자산 업데이트
+  const stocks = useWorldStore.getState().stocks;
+  const { data: latestHoldings } = await supabase
+    .from("holdings")
+    .select("ticker, qty")
+    .eq("user_id", userId);
+  const holdingsValue = (latestHoldings ?? []).reduce(
+    (sum, h) => sum + (stocks[h.ticker]?.price ?? 0) * h.qty,
+    0,
+  );
+  const newCash = (prof?.cash ?? 0) + cashDelta;
+  await supabase
+    .from("profiles")
+    .update({ portfolio_value: newCash + holdingsValue })
+    .eq("id", userId);
 }
 
 // ── Zustand 스토어 ────────────────────────────────────────────
